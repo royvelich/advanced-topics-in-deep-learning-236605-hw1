@@ -1,0 +1,28 @@
+name: advanced-topics-in-deep-learning-236605-hw1
+channels:
+  - nvidia
+  - pytorch
+  - defaults
+  - conda-forge
+dependencies:
+  - cudatoolkit=11.1
+  - python
+  - pytorch
+  - torchaudio
+  - torchvision
+  - ipython
+  - numpy
+  - scipy
+  - scikit-learn
+  - scikit-image
+  - cudatoolkit
+  - jupyterlab
+  - matplotlib
+  - jupyter
+  - pandas
+  - cython
+  - pytest
+  - tqdm
+  - opencv
+  - freetype
+  - pip
