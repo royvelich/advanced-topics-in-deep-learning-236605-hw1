@@ -8,12 +8,16 @@ class QueryEncoder(nn.Module):
         super(QueryEncoder, self).__init__()
         self._encoder = torchvision.models.resnet50(num_classes=c).cuda()
 
+        # Add a hidden layer to form a 2-layer MLP head (as described in MoCo V2)
+        orig_fc_in_features = self._encoder.fc.weight.shape[1]
+        self._encoder.fc = nn.Sequential(nn.Linear(orig_fc_in_features, orig_fc_in_features), nn.ReLU(), self._encoder.fc)
+
     def forward(self, queries):
         q = self._encoder(queries)
         return nn.functional.normalize(q, dim=1)
 
-    def parameters(self):
-        return self._encoder.parameters()
+    def get_encoder(self):
+        return self._encoder
 
 
 class KeyEncoder(QueryEncoder):
@@ -22,8 +26,8 @@ class KeyEncoder(QueryEncoder):
         self._m = m
         self._query_encoder = query_encoder
         self._reset_parameters()
-        # self.register_buffer("queue", torch.randn(c, k))
-        self._queue = nn.functional.normalize(torch.randn(c, k).cuda(), dim=0)
+        self.register_buffer("_queue", torch.randn(c, k).cuda())
+        self._queue = nn.functional.normalize(self._queue, dim=0).cuda()
 
     def _zip_parameters(self):
         return zip(self._query_encoder.parameters(), self.parameters())
@@ -31,6 +35,7 @@ class KeyEncoder(QueryEncoder):
     def _reset_parameters(self):
         for query_param, key_param in self._zip_parameters():
             key_param.data.copy_(query_param.data)
+            key_param.requires_grad = False
 
     def update_parameters(self):
         for query_param, key_param in self._zip_parameters():
@@ -49,6 +54,28 @@ class KeyEncoder(QueryEncoder):
         self._queue = self._queue[:, batch_size:]
 
 
+class LinearClassifier(nn.Module):
+    def __init__(self, c):
+        super(LinearClassifier, self).__init__()
+        self._classifier = torchvision.models.resnet50(num_classes=c).cuda()
+
+    def forward(self, x):
+        return self._classifier(x)
+
+    def freeze_features(self, query_encoder):
+        state_dict = query_encoder.get_encoder().state_dict()
+        for name, param in self._classifier.named_parameters():
+            if name not in ['fc.weight', 'fc.bias']:
+                param.data.copy_(state_dict[name])
+                param.requires_grad = False
+
+        self._classifier.fc.weight.data.normal_(mean=0.0, std=0.01)
+        self._classifier.fc.bias.data.zero_()
+
+    def parameters(self):
+        return list(filter(lambda parameter: parameter.requires_grad, self._classifier.parameters()))
+
+
 class MoCo(nn.Module):
     def __init__(self, c=128, m=0.999, k=65536):
         super(MoCo, self).__init__()
@@ -62,6 +89,9 @@ class MoCo(nn.Module):
 
     def get_m(self):
         return self._m
+
+    def get_query_encoder(self):
+        return self._query_encoder;
 
     def forward(self, queries, keys):
         q = self._query_encoder.forward(queries)
@@ -84,27 +114,3 @@ class MoCo(nn.Module):
         self._key_encoder.update_parameters()
         self._key_encoder.enqueue(keys=keys)
         self._key_encoder.dequeue(batch_size=keys.shape[0])
-
-
-# class Trainer:
-#     def __init__(self, encoders_bundle, loss_fn, k=65536):
-#         self._encoders_bundle = encoders_bundle
-#         self._loss_fn = loss_fn
-#         self._epochs = epochs
-#
-#
-#
-#     def forward(self, queries, keys):
-#         q = self.extract_features(queries=queries)
-#
-#         with torch.no_grad():
-#             k = self._key_encoder(keys)
-#             k = nn.functional.normalize(k, dim=1)
-#
-#         l_pos = torch.matmul(q.reshape([q.shape[0], 1, q.shape[1]]), k.reshape([k.shape[0], k.shape[1], 1])).squeeze(dim=1)
-#         l_neg = torch.matmul(q, self._queue)
-#
-#         logits = torch.cat([l_pos, l_neg], dim=1)
-#         labels = torch.zeros(q.shape[0])
-#
-#         return logits, labels
