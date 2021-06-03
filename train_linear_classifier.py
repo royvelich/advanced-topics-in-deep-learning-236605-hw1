@@ -1,5 +1,6 @@
 from torchvision.datasets.utils import download_url
 import os
+import sys
 import tarfile
 import hashlib
 import torchvision
@@ -14,6 +15,7 @@ from moco import LinearClassifier
 from datetime import datetime
 from pathlib import Path
 from moco import MoCo
+from logger import Logger
 
 # https://github.com/fastai/imagenette
 dataset_url = 'https://s3.amazonaws.com/fast-ai-imageclas/imagenette2.tgz'
@@ -41,6 +43,9 @@ def get_latest_subdirectory(base_dir='.'):
 
 
 if __name__ == '__main__':
+
+    sys.stdout = Logger()
+
     #####################################
     # Download Dataset
     #####################################
@@ -135,12 +140,14 @@ if __name__ == '__main__':
     classifier = LinearClassifier(c=10).cuda()
 
     latest_subdir = get_latest_subdirectory(results_base_path)
-    moco.load_state_dict(torch.load(os.path.join(latest_subdir, 'moco_650.pt'), map_location=torch.device('cuda')))
+    moco.load_state_dict(torch.load(os.path.join(latest_subdir, 'moco_900.pt'), map_location=torch.device('cuda')))
 
-    results_dir_path = os.path.normpath(os.path.join(results_base_path, datetime.now().strftime('%Y-%m-%d-%H-%M-%S')))
+    results_dir_path = latest_subdir
     Path(results_dir_path).mkdir(parents=True, exist_ok=True)
     classifier_filepath = os.path.normpath(os.path.join(results_dir_path, 'classifier.pt'))
     results_filepath = os.path.normpath(os.path.join(results_dir_path, 'classifier_loss_results.npy'))
+
+    sys.stdout = Logger(filepath=os.path.join(results_dir_path, 'linear_classifier_training.log'))
 
     # ----------------
     # Train classifier
@@ -170,7 +177,7 @@ if __name__ == '__main__':
             loss_item = loss_output.item()
             classifier_batch_loss_array = np.append(classifier_batch_loss_array, [loss_item])
             classifier_epoch_loss = np.mean(classifier_batch_loss_array)
-            print(f'Classifier Epoch: #{(classifier_epoch_index + 1):{" "}{"<"}{5}}; Batch: #{(classifier_batch_index + 1):{" "}{"<"}{5}}; Batch Loss: {loss_output.item():{" "}{"<"}{30}}; Average Loss: {classifier_epoch_loss:{" "}{"<"}{30}}')
+            print(f'Epoch: #{(classifier_epoch_index + 1):{" "}{"<"}{5}}| Batch: #{(classifier_batch_index + 1):{" "}{"<"}{5}}| Batch Loss: {loss_output.item():{" "}{"<"}{30}}| Epoch Loss: {classifier_epoch_loss:{" "}{"<"}{30}}')
         print('')
         classifier_train_loss_array = np.append(classifier_train_loss_array, [classifier_epoch_loss])
 
@@ -179,13 +186,13 @@ if __name__ == '__main__':
         classifier.eval()
         acc1_array = np.array([])
         acc1 = 0
-        for _, (images, labels) in enumerate(val_dataloader_classifier):
+        for classifier_batch_index, (images, labels) in enumerate(val_dataloader_classifier):
             logits = classifier.forward(images.cuda())
             _, pred = logits.topk(k=1, dim=1, largest=True, sorted=True)
             correct_preds = float(pred.squeeze().eq(labels.cuda()).sum())
             acc1_array = np.append(acc1_array, [correct_preds / float(labels.shape[0])])
             acc1 = acc1_array.mean()
-            print(f'Accuracy: #{acc1:{" "}{"<"}{30}}')
+            print(f'Batch: #{(classifier_batch_index + 1):{" "}{"<"}{5}}| Top-1 Accuracy: #{acc1:{" "}{"<"}{30}}')
         print('')
         classifier_acc1_array = np.append(classifier_acc1_array, [acc1])
 
