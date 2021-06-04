@@ -10,7 +10,9 @@ class QueryEncoder(nn.Module):
 
         # Add a hidden layer to form a 2-layer MLP head (as described in MoCo V2)
         orig_fc_in_features = self._encoder.fc.weight.shape[1]
-        self._encoder.fc = nn.Sequential(nn.Linear(orig_fc_in_features, orig_fc_in_features), nn.ReLU(), self._encoder.fc)
+        hidden_mlp_layer = nn.Linear(orig_fc_in_features, orig_fc_in_features)
+        fc_modules = [hidden_mlp_layer, nn.ReLU(), self._encoder.fc]
+        self._encoder.fc = nn.Sequential(*fc_modules)
 
     def forward(self, queries):
         q = self._encoder(queries)
@@ -29,8 +31,8 @@ class KeyEncoder(QueryEncoder):
 
         # create the queue by registering a buffer named "_queue". This will make sure that the queue matrix will
         # be part of the module's state_dict
-        self.register_buffer("_queue", torch.randn(c, k).cuda())
-        self._queue = nn.functional.normalize(self._queue, dim=0).cuda()
+        queue_init = nn.functional.normalize(torch.randn(c, k), dim=0).cuda()
+        self.register_buffer("_queue", queue_init)
 
     def _zip_parameters(self):
         return zip(self._query_encoder.parameters(), self.parameters())
@@ -88,7 +90,7 @@ class LinearClassifier(nn.Module):
 
 
 class MoCo(nn.Module):
-    def __init__(self, c=128, m=0.999, k=65536):
+    def __init__(self, c=128, m=0.999, k=20000):
         super(MoCo, self).__init__()
         self._c = c
         self._m = m

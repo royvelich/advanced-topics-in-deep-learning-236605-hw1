@@ -109,8 +109,6 @@ if __name__ == '__main__':
             dataset_val_classifier,
             batch_size=batch_size,
             num_workers=20,
-            drop_last=True,
-            shuffle=True,
             pin_memory=True,
             prefetch_factor=20)
 
