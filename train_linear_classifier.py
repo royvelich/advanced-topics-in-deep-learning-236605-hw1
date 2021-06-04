@@ -43,43 +43,40 @@ def get_latest_subdirectory(base_dir='.'):
 
 
 if __name__ == '__main__':
-
-    sys.stdout = Logger()
-
     #####################################
     # Download Dataset
     #####################################
 
-    # # https://github.com/fastai/imagenette
-    # dataset_url = 'https://s3.amazonaws.com/fast-ai-imageclas/imagenette2.tgz'
-    # dataset_filename = dataset_url.split('/')[-1]
-    # dataset_foldername = dataset_filename.split('.')[0]
-    # data_path = './data'
-    # dataset_filepath = os.path.join(data_path, dataset_filename)
-    # dataset_folderpath = os.path.join(data_path, dataset_foldername)
-    #
-    # os.makedirs(data_path, exist_ok=True)
-    #
-    # download = False
-    # if not os.path.exists(dataset_filepath):
-    #     download = True
-    # else:
-    #     md5_hash = hashlib.md5()
-    #
-    #     file = open(dataset_filepath, "rb")
-    #
-    #     content = file.read()
-    #
-    #     md5_hash.update(content)
-    #
-    #     digest = md5_hash.hexdigest()
-    #     if digest != 'fe2fc210e6bb7c5664d602c3cd71e612':
-    #         download = True
-    # if download:
-    #     download_url(dataset_url, data_path)
-    #
-    # with tarfile.open(dataset_filepath, 'r:gz') as tar:
-    #     tar.extractall(path=data_path)
+    # https://github.com/fastai/imagenette
+    dataset_url = 'https://s3.amazonaws.com/fast-ai-imageclas/imagenette2.tgz'
+    dataset_filename = dataset_url.split('/')[-1]
+    dataset_foldername = dataset_filename.split('.')[0]
+    data_path = './data'
+    dataset_filepath = os.path.join(data_path, dataset_filename)
+    dataset_folderpath = os.path.join(data_path, dataset_foldername)
+
+    os.makedirs(data_path, exist_ok=True)
+
+    download = False
+    if not os.path.exists(dataset_filepath):
+        download = True
+    else:
+        md5_hash = hashlib.md5()
+
+        file = open(dataset_filepath, "rb")
+
+        content = file.read()
+
+        md5_hash.update(content)
+
+        digest = md5_hash.hexdigest()
+        if digest != 'fe2fc210e6bb7c5664d602c3cd71e612':
+            download = True
+    if download:
+        download_url(dataset_url, data_path)
+
+    with tarfile.open(dataset_filepath, 'r:gz') as tar:
+        tar.extractall(path=data_path)
 
     #####################################
     # Create DataLoader
@@ -105,12 +102,12 @@ if __name__ == '__main__':
     dataset_val_classifier = torchvision.datasets.ImageFolder(os.path.join(dataset_folderpath, 'val'), val_transform_classifier)
 
     # settings
-    classifier_train_epochs = 200
+    classifier_train_epochs = 700
     batch_size = 220
     t = 0.07
     momentum = 0.9
     weight_decay = 1e-4
-    lr = 1e-4
+    lr = 1e-3
     k = 10000
     checkpoint_granularity = 50
 
@@ -140,11 +137,10 @@ if __name__ == '__main__':
     classifier = LinearClassifier(c=10).cuda()
 
     latest_subdir = get_latest_subdirectory(results_base_path)
-    moco.load_state_dict(torch.load(os.path.join(latest_subdir, 'moco_900.pt'), map_location=torch.device('cuda')))
+    moco.load_state_dict(torch.load(os.path.join(latest_subdir, 'moco_950.pt'), map_location=torch.device('cuda')))
 
     results_dir_path = latest_subdir
     Path(results_dir_path).mkdir(parents=True, exist_ok=True)
-    classifier_filepath = os.path.normpath(os.path.join(results_dir_path, 'classifier.pt'))
     results_filepath = os.path.normpath(os.path.join(results_dir_path, 'classifier_loss_results.npy'))
 
     sys.stdout = Logger(filepath=os.path.join(results_dir_path, 'linear_classifier_training.log'))
@@ -192,17 +188,17 @@ if __name__ == '__main__':
             correct_preds = float(pred.squeeze().eq(labels.cuda()).sum())
             acc1_array = np.append(acc1_array, [correct_preds / float(labels.shape[0])])
             acc1 = acc1_array.mean()
-            print(f'Batch: #{(classifier_batch_index + 1):{" "}{"<"}{5}}| Top-1 Accuracy: #{acc1:{" "}{"<"}{30}}')
+            print(f'Batch: #{(classifier_batch_index + 1):{" "}{"<"}{5}}| Top-1 Accuracy: {acc1:{" "}{"<"}{30}}')
         print('')
         classifier_acc1_array = np.append(classifier_acc1_array, [acc1])
 
-        # Save classifier loss results
+        # Save current loss results
         results = {
             'classifier_train_loss_array': classifier_train_loss_array,
             'classifier_train_epochs': classifier_train_epochs,
             'classifier_acc_array': classifier_acc1_array,
         }
+        np.save(file=results_filepath, arr=results, allow_pickle=True)
 
-    # Save classifier model
-    np.save(file=results_filepath, arr=results, allow_pickle=True)
-    torch.save(classifier.state_dict(), classifier_filepath)
+        # Save classifier model
+        torch.save(classifier.state_dict(), os.path.normpath(os.path.join(results_dir_path, f'classifier_{classifier_epoch_index + 1}.pt')))

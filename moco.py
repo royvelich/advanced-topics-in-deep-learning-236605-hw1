@@ -26,6 +26,9 @@ class KeyEncoder(QueryEncoder):
         self._m = m
         self._query_encoder = query_encoder
         self._reset_parameters()
+
+        # create the queue by registering a buffer named "_queue". This will make sure that the queue matrix will
+        # be part of the module's state_dict
         self.register_buffer("_queue", torch.randn(c, k).cuda())
         self._queue = nn.functional.normalize(self._queue, dim=0).cuda()
 
@@ -69,11 +72,19 @@ class LinearClassifier(nn.Module):
                 param.data.copy_(state_dict[name])
                 param.requires_grad = False
 
+        # initialize the fully-connected layer
+        # https://stackoverflow.com/questions/49433936/how-to-initialize-weights-in-pytorch
         self._classifier.fc.weight.data.normal_(mean=0.0, std=0.01)
         self._classifier.fc.bias.data.zero_()
 
     def parameters(self):
-        return list(filter(lambda parameter: parameter.requires_grad, self._classifier.parameters()))
+        # return only the parameter that DO require gradient calculation
+        mlp_layer_params = []
+        for parameter in self._classifier.parameters():
+            if parameter.requires_grad is True:
+                mlp_layer_params.append(parameter)
+
+        return mlp_layer_params
 
 
 class MoCo(nn.Module):
